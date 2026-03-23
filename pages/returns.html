@@ -4,65 +4,123 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Index Returns</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚛</text></svg>" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" />
+    <link rel="stylesheet" href="../styles.css">
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        h1, h2 { color: #333; }
-        /* Filter Styles */
-        #filter-controls { margin-bottom: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 5px; background-color: #f9f9f9; display: flex; gap: 20px; align-items: center; }
-        #filter-controls label { font-weight: bold; }
-        #filter-controls input[type="number"] { padding: 5px; border: 1px solid #aaa; border-radius: 3px; width: 80px; text-align: center; }
-        #filter-controls button { padding: 8px 15px; background-color: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer; transition: background-color 0.3s; }
-        #filter-controls button:hover { background-color: #45a049; }
-        
+        main { max-width: 1200px; margin: 5rem auto 2rem; padding: 1rem; }
+        h2 { font-size: 1.5rem; font-weight: 700; margin-bottom: 1rem; }
+        h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem; }
+        p.note { color: #94a3b8; font-size: 0.9rem; margin-top: 0.5rem; }
+
+        /* Filter Controls */
+        #filter-controls {
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: rgba(15, 23, 42, 0.6);
+            border-radius: 12px;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        #filter-controls label { font-weight: 600; font-size: 0.9rem; }
+        #filter-controls input[type="number"] {
+            padding: 0.4rem 0.6rem;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            width: 80px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.02);
+            color: #F8FAFC;
+            font-family: inherit;
+        }
+        #filter-controls button {
+            padding: 0.5rem 1rem;
+            background: linear-gradient(135deg, #3B82F6, #2563EB);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 500;
+            font-family: inherit;
+            transition: all 0.3s ease;
+        }
+        #filter-controls button:hover {
+            background: linear-gradient(135deg, #EAB308, #CA8A04);
+        }
+
         /* Table Styles */
-        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: right; }
-        th { background-color: #f2f2f2; font-weight: bold; text-align: center; }
-        .index-header { background-color: #e0e0e0; text-align: left; }
-        .year-header { background-color: #c0c0c0; text-align: center; font-weight: bold; }
-        .annual { background-color: #ffe0b2; font-weight: bold; }
-        .positive { color: green; }
-        .negative { color: red; }
-        .current-year { background-color: #e6f7ff; }
-        .ytd { font-style: italic; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; }
+        th, td { padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(255, 255, 255, 0.06); text-align: right; font-size: 0.85rem; }
+        th { font-weight: 600; text-align: center; color: #CBD5E1; }
+        .index-header { text-align: left; color: #F8FAFC; }
+        .year-header { text-align: center; font-weight: 700; color: #F8FAFC; }
+        .annual { font-weight: 700; border-left: 1px solid rgba(255, 255, 255, 0.1); }
+        .positive { color: #86efac; }
+        .negative { color: #fda4af; }
+        .current-year { background: rgba(59, 130, 246, 0.08); }
+        .ytd { font-style: italic; color: #94a3b8; }
+
+        /* Probability Table */
+        #probTable th, #probTable td { text-align: center; }
+        #probTable td:first-child { text-align: left; }
+
+        /* Responsive: horizontal scroll for wide table */
+        .table-wrapper { overflow-x: auto; }
     </style>
 </head>
 <body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/index.html" class="logo"></a>
+            <button class="nav-signup" onclick="window.location.href='/index.html'">Home</button>
+        </div>
+    </nav>
 
-    <h2>Stock index monthly & annual returns (2000-2026)</h2>
+    <main>
+        <h2>Stock index monthly & annual returns (2000-2026)</h2>
 
-    <div id="filter-controls">
-        <label for="startYear">Start Year:</label>
-        <input type="number" id="startYear" min="2000" max="2026" value="2000">
-        
-        <label for="endYear">End Year:</label>
-        <input type="number" id="endYear" min="2000" max="2026" value="2026">
-        
-        <button onclick="generateReturnsTable()">Apply Filter</button>
-    </div>
+        <div id="filter-controls">
+            <label for="startYear">Start Year:</label>
+            <input type="number" id="startYear" min="2000" max="2026" value="2000">
+            <label for="endYear">End Year:</label>
+            <input type="number" id="endYear" min="2000" max="2026" value="2026">
+            <button onclick="generateReturnsTable()">Apply Filter</button>
+        </div>
 
-    <div id="returns-table-container"></div>
+        <div class="table-wrapper">
+            <div id="returns-table-container"></div>
+        </div>
 
-    <h3>Probability of monthly returns > threshold</h3>
-    <table id="probTable">
-        <thead>
-            <tr>
-                <th class="index-header" rowspan="2"></th>
-                <th colspan="5">Threshold</th>
-            </tr>
-            <tr>
-                <th>0%</th>
-                <th>1%</th>
-                <th>2%</th>
-                <th>3%</th>
-                <th>5%</th>
-            </tr>
-        </thead>
-        <tbody>
-        <!-- Rows added by JS -->
-        </tbody>
-    </table>
-    <p>Based on monthly returns from Jan 2000 to Feb 2026</p>
+        <h3>Probability of monthly returns > threshold</h3>
+        <div class="table-wrapper">
+            <table id="probTable">
+                <thead>
+                    <tr>
+                        <th class="index-header" rowspan="2"></th>
+                        <th colspan="5">Threshold</th>
+                    </tr>
+                    <tr>
+                        <th>0%</th>
+                        <th>1%</th>
+                        <th>2%</th>
+                        <th>3%</th>
+                        <th>5%</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <!-- Rows added by JS -->
+                </tbody>
+            </table>
+        </div>
+        <p class="note">Based on monthly returns from Jan 2000 to Feb 2026</p>
+    </main>
+
+    <footer>
+        <p>&copy; Computational Finance Club - 2025</p>
+    </footer>
+
     <script>
         const ALL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const indices = ['sp500', 'djia', 'nasdaq'];
@@ -129,9 +187,6 @@
             2026: { sp500: null, djia: null, nasdaq: null }
         };
 
-        /**
-         * Calculates the compounded return from an array of monthly returns.
-         */
         function calculateCompoundedReturn(returns) {
             const validReturns = returns.filter(r => r !== null && r !== undefined);
             if (validReturns.length === 0) return null;
@@ -139,9 +194,6 @@
             return (cumulativeFactor - 1) * 100;
         }
 
-        /**
-         * Formats a return value with color coding and percentage sign.
-         */
         function formatReturn(value, isAnnual = false) {
             if (value === null || value === undefined) {
                 return `<td class="${isAnnual ? 'annual' : ''}">-</td>`;
@@ -152,32 +204,29 @@
             return `<td class="${className} ${extraClass}">${fixedValue}%</td>`;
         }
 
-        /**
-         * Generates the HTML table based on the start and end year filter.
-         */
         function generateReturnsTable() {
             const startYearInput = document.getElementById('startYear');
             const endYearInput = document.getElementById('endYear');
-            
+
             const startYear = parseInt(startYearInput.value);
             const endYear = parseInt(endYearInput.value);
 
             if (isNaN(startYear) || isNaN(endYear) || startYear > endYear || startYear < 2000 || endYear > 2026) {
-                document.getElementById('returns-table-container').innerHTML = '<p style="color:red;">Invalid year range. Please enter a valid start and end year (2000-2026), where start year is less than or equal to end year.</p>';
+                document.getElementById('returns-table-container').innerHTML = '<p class="note" style="color:#fda4af;">Invalid year range. Please enter a valid start and end year (2000-2026), where start year is less than or equal to end year.</p>';
                 return;
             }
 
             let html = '<table><thead>';
-            
+
             const allYears = Object.keys(data).map(Number).sort((a, b) => a - b);
             const filteredYears = allYears.filter(year => year >= startYear && year <= endYear).map(String);
-            
+
             const lastYearInData = allYears[allYears.length - 1].toString();
             const maxMonths = ALL_MONTHS.length;
 
             html += '<tr><th class="year-header" rowspan="2"></th>';
             html += '<th class="index-header" rowspan="2"></th>';
-            
+
             ALL_MONTHS.forEach(month => {
                 html += `<th colspan="1">${month}</th>`;
             });
@@ -189,15 +238,14 @@
 
                 indices.forEach((index, i) => {
                     const returns = yearData[index] || [];
-                    
-                    // Use pre-computed annual return if available, otherwise calculate
+
                     const yearAnnual = annualReturns[year] && annualReturns[year][index];
                     const compoundedReturn = yearAnnual !== null && yearAnnual !== undefined
                         ? yearAnnual
                         : calculateCompoundedReturn(returns);
-                    
+
                     const isYTD = isCurrentYear && returns.some(r => r === null || r === undefined);
-                    
+
                     html += `<tr class="${isCurrentYear ? 'current-year' : ''}">`;
 
                     if (i === 0) {
@@ -212,10 +260,10 @@
                     }
 
                     html += formatReturn(compoundedReturn, true);
-                    
+
                     html += '</tr>';
                 });
-                
+
                 if (isCurrentYear) {
                     html += `<tr><td colspan="${maxMonths + 3}" class="ytd" style="text-align:center;">* Annual return for ${year} is calculated as YTD (Year-to-Date) based on available data.</td></tr>`;
                 }
@@ -225,17 +273,11 @@
             document.getElementById('returns-table-container').innerHTML = html;
         }
 
-        /**
-         * Calculates probability of monthly returns > threshold
-         */
         function probAbove(returnsArray, threshold) {
             const count = returnsArray.filter(r => r > threshold).length;
             return (count / returnsArray.length * 100).toFixed(1) + '%';
         }
 
-        /**
-         * Adds probability of monthly returns > threshold rows to the table
-         */
         function addMonthlyRetProbsToTable() {
             const returns = { sp500: [], djia: [], nasdaq: [] };
             for (const year in data) {
@@ -268,10 +310,8 @@
             });
         }
 
-        // Initial table load
         document.addEventListener('DOMContentLoaded', generateReturnsTable);
         addMonthlyRetProbsToTable();
     </script>
-
 </body>
 </html>
