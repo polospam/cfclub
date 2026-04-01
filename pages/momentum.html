@@ -221,8 +221,8 @@
  
 	<script src="../scripts/footer.js"></script>
 	<script>
-		const apiBase = 'https://yfinance-phi.vercel.app/momentum/';
- 
+		const API_BASE = 'https://yfinance-phi.vercel.app';
+
 		function qs(name){ return new URLSearchParams(location.search).get(name); }
  
 		function fmt(num, digits=2){
@@ -357,15 +357,29 @@
  
 			try {
 				const tickers = q.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
-				const url = apiBase + encodeURIComponent(tickers.join(','));
-				const resp = await fetch(url);
-				if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
-				const json = await resp.json();
- 
+
 				let items = [];
-				if (Array.isArray(json))           items = json;
-				else if (json && json.ticker)      items = [json];
-				else if (typeof json === 'object') items = Object.values(json);
+
+				if (tickers.length === 1) {
+					// Single ticker: GET /momentum/{ticker}
+					const url = `${API_BASE}/momentum/${encodeURIComponent(tickers[0])}`;
+					const resp = await fetch(url);
+					if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+					const json = await resp.json();
+					items = json && json.ticker ? [json] : [];
+				} else {
+					// Multiple tickers: GET /momentum/multiple/?tickers=A,B,C
+					const url = `${API_BASE}/momentum/multiple/?tickers=${encodeURIComponent(tickers.join(','))}`;
+					const resp = await fetch(url);
+					if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+					const json = await resp.json();
+					// Backend returns { tickers: { "AMZN": {...}, "TSLA": {...} } }
+					if (json && json.tickers && typeof json.tickers === 'object') {
+						items = Object.values(json.tickers).filter(Boolean);
+					} else if (Array.isArray(json)) {
+						items = json;
+					}
+				}
  
 				renderTable(items);
 			} catch(err){
