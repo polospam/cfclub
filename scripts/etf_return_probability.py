@@ -4,12 +4,16 @@ etf_return_probability.py
 Calculate the empirical probability that the monthly total return of a given
 ETF exceeds a specified threshold, over an optional date window.
 
-Also produces a heatmap of P(return > threshold) broken down by year × ticker.
+Also produces:
+  • A heatmap of P(return > threshold) broken down by year × ticker.
+  • A rolling-window chart: P(cumulative N-month return > threshold) by
+    start-of-window calendar month (Jan–Dec), per ticker.
 
 Usage (CLI):
     python etf_return_probability.py [--ticker TICKER] [--threshold THRESHOLD]
                                      [--start YYYY-MM] [--end YYYY-MM]
-                                     [--data PATH] [--heatmap] [--out PATH]
+                                     [--data PATH] [--heatmap] [--rolling]
+                                     [--window N] [--out PATH]
 
 Examples:
     # Probability SPY monthly return > 1% over all available data
@@ -19,11 +23,15 @@ Examples:
     python etf_return_probability.py --ticker QQQ --threshold 0.02 \\
         --start 2015-01 --end 2019-12
 
-    # Generate a year × ticker heatmap for all ETFs (threshold 1%)
+    # Year × ticker heatmap (monthly returns, threshold 1%)
     python etf_return_probability.py --heatmap --threshold 0.01
 
-    # Save heatmap to a custom path
-    python etf_return_probability.py --heatmap --out my_heatmap.png
+    # Rolling-window chart: P(12-month return > 9%) by start month, all tickers
+    python etf_return_probability.py --rolling --window 12 --threshold 0.09
+
+    # Same but filtered to 2010-2020 and saved to a custom path
+    python etf_return_probability.py --rolling --window 12 --threshold 0.09 \\
+        --start 2010-01 --end 2020-12 --out my_rolling.png
 """
 
 import argparse
@@ -292,6 +300,205 @@ def generate_heatmap(
     return os.path.abspath(out_path)
 
 
+# ── Rolling-window analysis ──────────────────────────────────────────────────
+
+MONTH_NAMES = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+]
+
+
+def compute_rolling_returns(
+    df: pd.DataFrame,
+    ticker: str,
+    window: int,
+) -> pd.DataFrame:
+    """
+    Compute cumulative total returns for every rolling N-month window
+    for a single ticker.
+
+    The cumulative return of a window starting at month t is:
+        (1 + r_t) * (1 + r_{t+1}) * ... * (1 + r_{t+N-1}) - 1
+
+    Returns a DataFrame with columns: date_start, start_month, cum_return
+    where date_start is the first month of each window.
+    """
+    sub = df[df["ticker"] == ticker].dropna(subset=["return"]).sort_values("date").reset_index(drop=True)
+
+    gross = (1 + sub["return"]).values
+    dates = sub["date"].values
+
+    records = []
+    for i in range(len(gross) - window + 1):
+        cum = gross[i : i + window].prod() - 1
+        start_date = pd.Timestamp(dates[i])
+        records.append({
+            "date_start":   start_date,
+            "start_month":  start_date.month,   # 1–12
+            "cum_return":   cum,
+        })
+
+    return pd.DataFrame(records)
+
+
+def build_rolling_prob_table(
+    df: pd.DataFrame,
+    window: int,
+    threshold: float,
+    tickers: list[str] | None = None,
+) -> pd.DataFrame:
+    """
+    Build a (start_month × ticker) table of P(N-month cum. return > threshold).
+
+    Rows = calendar months 1–12 (Jan–Dec)
+    Cols = tickers
+    Values = empirical probability (NaN if fewer than 3 observations)
+    """
+    MIN_OBS = 3
+    all_tickers = tickers or sorted(df["ticker"].dropna().unique().tolist())
+
+    table = {}
+    for tkr in all_tickers:
+        roll = compute_rolling_returns(df, tkr, window)
+        probs = {}
+        for m in range(1, 13):
+            subset = roll[roll["start_month"] == m]["cum_return"]
+            probs[m] = (subset > threshold).sum() / len(subset) if len(subset) >= MIN_OBS else float("nan")
+        table[tkr] = probs
+
+    result = pd.DataFrame(table, index=range(1, 13))
+    result.index.name = "start_month"
+    return result
+
+
+def plot_rolling_chart(
+    prob_table: pd.DataFrame,
+    window: int,
+    threshold: float,
+    out_path: str,
+    start: str | None = None,
+    end: str | None = None,
+) -> None:
+    """
+    Bar-chart (grouped by ticker) of P(N-month return > threshold)
+    for each calendar start month.
+    """
+    tickers  = prob_table.columns.tolist()
+    months   = list(range(1, 13))
+    n_tkr    = len(tickers)
+    x        = np.arange(12)
+    bar_w    = 0.72 / n_tkr
+
+    # Palette — distinct, colourblind-friendly
+    palette = ["#2166ac", "#d6604d", "#4dac26", "#8073ac"]
+    colors   = palette[:n_tkr]
+
+    fig, ax = plt.subplots(figsize=(13, 5.5))
+    fig.patch.set_facecolor("#f8f8f8")
+    ax.set_facecolor("#f8f8f8")
+
+    for i, tkr in enumerate(tickers):
+        vals   = [prob_table.loc[m, tkr] for m in months]
+        offset = (i - (n_tkr - 1) / 2) * bar_w
+        bars   = ax.bar(
+            x + offset, vals,
+            width=bar_w * 0.92,
+            label=tkr,
+            color=colors[i],
+            alpha=0.88,
+            zorder=3,
+        )
+        # Annotate each bar
+        for bar, val in zip(bars, vals):
+            if not np.isnan(val):
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + 0.012,
+                    f"{val * 100:.0f}%",
+                    ha="center", va="bottom",
+                    fontsize=7.5, color=colors[i], fontweight="bold",
+                )
+
+    # 50% reference line
+    ax.axhline(0.5, color="#555555", linewidth=0.9, linestyle="--", zorder=2, label="50% line")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(MONTH_NAMES, fontsize=10)
+    ax.set_xlabel("Start Month of Window", fontsize=10)
+    ax.set_ylabel("Probability", fontsize=10)
+    ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=0))
+    ax.set_ylim(0, min(1.15, ax.get_ylim()[1] + 0.08))
+    ax.yaxis.grid(True, color="#cccccc", linewidth=0.6, zorder=0)
+    ax.set_axisbelow(True)
+
+    thr_str = f"{threshold * 100:g}%"
+    period_str = ""
+    if start or end:
+        period_str = f"  ·  {start or 'start'} → {end or 'end'}"
+
+    ax.set_title(
+        f"P({window}-Month Cumulative Return > {thr_str})  by Start Month{period_str}",
+        fontsize=13, fontweight="bold", pad=12,
+    )
+    ax.legend(title="Ticker", fontsize=9, title_fontsize=9, framealpha=0.7)
+
+    fig.text(
+        0.5, 0.01,
+        f"Empirical probability that the cumulative total return of a "
+        f"{window}-month window exceeds {thr_str}, grouped by the window's "
+        f"starting calendar month. Cells with < 3 observations excluded.",
+        ha="center", fontsize=7.5, color="#444444",
+    )
+
+    plt.tight_layout(rect=[0, 0.04, 1, 1])
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Rolling-window chart saved → {out_path}")
+
+
+def generate_rolling_chart(
+    window: int = 12,
+    threshold: float = 0.0,
+    tickers: list[str] | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    data_path: str = _DEFAULT_DATA,
+    out_path: str | None = None,
+) -> str:
+    """
+    Build and save P(N-month return > threshold) by start month chart.
+
+    Parameters
+    ----------
+    window    : int    Rolling window length in months (default 12).
+    threshold : float  Cumulative return threshold as decimal (default 0.0 = 0%).
+    tickers   : list   Tickers to include (default: all in the file).
+    start     : str    Earliest data month 'YYYY-MM' to include.
+    end       : str    Latest data month 'YYYY-MM' to include.
+    data_path : str    Path to the ETF CSV.
+    out_path  : str    Output PNG path (auto-generated if None).
+
+    Returns
+    -------
+    str  Absolute path to the saved PNG.
+    """
+    if out_path is None:
+        stem = f"etf_rolling{window}m_{int(threshold*100)}pct_heatmap.png"
+        out_path = os.path.join(os.path.dirname(_DEFAULT_OUT), stem)
+
+    df = load_data(data_path)
+    df = df.dropna(subset=["return"])
+
+    if start:
+        df = df[df["date"] >= pd.to_datetime(start)]
+    if end:
+        df = df[df["date"] <= pd.to_datetime(end) + pd.offsets.MonthEnd(0)]
+
+    prob_table = build_rolling_prob_table(df, window, threshold, tickers)
+    plot_rolling_chart(prob_table, window, threshold, out_path, start, end)
+    return os.path.abspath(out_path)
+
+
 # ── Programmatic API ──────────────────────────────────────────────────────────
 
 def return_probability(
@@ -336,14 +543,15 @@ def return_probability(
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Probability that an ETF's monthly return exceeds a threshold. "
-            "Use --heatmap to generate a year × ticker probability heatmap."
+            "ETF return probability toolkit. "
+            "Single-ticker stats (default), year×ticker heatmap (--heatmap), "
+            "or rolling N-month window by start month (--rolling)."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
     parser.add_argument("--ticker",    "-t", default="SPY",
-                        help="ETF ticker (default: SPY). Ignored with --heatmap.")
+                        help="ETF ticker (default: SPY). Ignored with --heatmap / --rolling.")
     parser.add_argument("--threshold", "-p", type=float, default=0.01,
                         help="Return threshold as decimal (default: 0.01 = 1%%)")
     parser.add_argument("--start",     "-s", default=None, metavar="YYYY-MM",
@@ -352,10 +560,15 @@ def _parse_args() -> argparse.Namespace:
                         help="End month, inclusive (default: latest available)")
     parser.add_argument("--data",      "-d", default=_DEFAULT_DATA, metavar="PATH",
                         help="Path to the ETF CSV file")
+    # Mode flags
     parser.add_argument("--heatmap",   action="store_true",
-                        help="Generate a year × ticker heatmap for all ETFs")
-    parser.add_argument("--out",       "-o", default=_DEFAULT_OUT, metavar="PATH",
-                        help=f"Output PNG path for --heatmap (default: {_DEFAULT_OUT})")
+                        help="Generate a year × ticker monthly-return heatmap")
+    parser.add_argument("--rolling",   action="store_true",
+                        help="Generate a rolling N-month return probability chart by start month")
+    parser.add_argument("--window",    "-w", type=int, default=12, metavar="N",
+                        help="Rolling window length in months for --rolling (default: 12)")
+    parser.add_argument("--out",       "-o", default=None, metavar="PATH",
+                        help="Output PNG path (auto-named if omitted)")
     return parser.parse_args()
 
 
@@ -364,6 +577,15 @@ if __name__ == "__main__":
 
     if args.heatmap:
         generate_heatmap(
+            threshold=args.threshold,
+            start=args.start,
+            end=args.end,
+            data_path=args.data,
+            out_path=args.out or _DEFAULT_OUT,
+        )
+    elif args.rolling:
+        generate_rolling_chart(
+            window=args.window,
             threshold=args.threshold,
             start=args.start,
             end=args.end,
